@@ -138,7 +138,18 @@
 
         // Canvas environment constants
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        // Your web app's Firebase configuration
+        // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+        const firebaseConfig = {
+            apiKey: "AIzaSyCkFFWTZf6TRxCcdX8e9u3ht7rBrK0U1gY",
+            authDomain: "rotina-de-remedios-a25aa.firebaseapp.com",
+            projectId: "rotina-de-remedios-a25aa",
+            storageBucket: "rotina-de-remedios-a25aa.firebasestorage.app",
+            messagingSenderId: "776904181981",
+            appId: "1:776904181981:web:f7346dd93e9c13857b7334",
+            measurementId: "G-913Q465M96"
+        };
+        // initialAuthToken is typically provided by the Canvas environment, but we'll always sign in anonymously
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // Utility functions for TTS
@@ -548,18 +559,21 @@
                 app = initializeApp(firebaseConfig);
                 auth = getAuth(app);
                 db = getFirestore(app);
+                console.log("Firebase inicializado.");
 
                 onAuthStateChanged(auth, async (user) => {
+                    console.log("Estado de autenticação alterado. Usuário:", user);
                     if (!user) {
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
+                        console.log("Nenhum usuário autenticado, tentando login anónimo.");
+                        await signInAnonymously(auth);
+                        console.log("Login anónimo bem-sucedido.");
+                    } else {
+                        console.log("Usuário já autenticado.");
                     }
                     userId = auth.currentUser?.uid || `anon-${crypto.randomUUID()}`;
                     isAuthReady = true;
                     document.getElementById('user-id-display').textContent = userId; // Update user ID immediately
+                    console.log("UserID definido:", userId);
                     renderUI(); // Initial UI render after authentication
                     setupFirestoreListener(); // Setup Firestore listener
 
