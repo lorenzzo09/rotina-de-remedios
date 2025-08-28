@@ -173,6 +173,8 @@
             appId: "1:776904181981:web:f7346dd93e9c13857b7334",
             measurementId: "G-913Q465M96"
         };
+        // The `initialAuthToken` constant is no longer relevant for email/password authentication
+        // and has been removed to avoid confusion.
 
         // Utility functions for TTS
         const pcmToWav = (pcmData, sampleRate) => {
@@ -698,7 +700,7 @@
                         hideAuthModal(); // Hide auth modal if user is logged in
                     } else {
                         userId = null; // No user logged in
-                        console.log("Nenhum usuário logado.");
+                        console.log("Nenhum usuário logado. Mostrando modal de autenticação.");
                         showAuthModal(); // Show auth modal if no user
                     }
                     isAuthReady = true;
