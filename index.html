@@ -55,6 +55,7 @@
             <p class="text-xl text-gray-600">Organize sua rotina de medicamentos, por dia e por semana.</p>
             <div id="user-info" class="text-center text-sm text-gray-500 mb-4">
                 <p>ID do Usuário: <span id="user-id-display" class="font-mono text-gray-700 break-all">Carregando...</span></p>
+                <button id="logout-button" class="mt-2 bg-red-500 hover:bg-red-600 text-white font-semibold py-1 px-3 rounded-full text-xs hidden">Sair</button>
             </div>
         </header>
 
@@ -111,6 +112,28 @@
             </div>
         </div>
 
+        <!-- Modal de Login/Registo -->
+        <div id="auth-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 transition-all duration-300 opacity-0 pointer-events-none">
+            <div class="bg-white rounded-xl shadow-lg p-8 w-full max-w-lg mx-4 transform transition-all duration-300 scale-95">
+                <h3 class="text-2xl font-bold mb-4 text-center" id="auth-modal-title">Iniciar Sessão</h3>
+                <form id="auth-form" class="flex flex-col gap-4">
+                    <div class="flex flex-col">
+                        <label for="auth-email" class="block text-sm font-medium text-gray-700">Email</label>
+                        <input type="email" id="auth-email" class="w-full rounded-md border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none transition-all duration-300" placeholder="seuemail@exemplo.com" required />
+                    </div>
+                    <div class="flex flex-col">
+                        <label for="auth-password" class="block text-sm font-medium text-gray-700">Palavra-passe</label>
+                        <input type="password" id="auth-password" class="w-full rounded-md border border-gray-300 px-4 py-2 focus:border-blue-500 focus:outline-none transition-all duration-300" placeholder="Mínimo 6 caracteres" required />
+                    </div>
+                    <button type="submit" id="auth-submit-button" class="w-full bg-blue-500 hover:bg-blue-600 active:bg-blue-700 mt-4 rounded-full px-6 py-3 font-semibold text-white transition-all duration-300 transform hover:scale-105 active:scale-95">Entrar</button>
+                    <button type="button" id="toggle-auth-mode-button" class="w-full text-blue-500 hover:text-blue-600 mt-2 font-semibold">Não tem uma conta? Crie uma!</button>
+                </form>
+                <button id="close-auth-modal-button" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+        </div>
+
         <!-- Toast Notification Element -->
         <div id="toast-notification" class="hidden"></div>
 
@@ -119,7 +142,7 @@
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, setDoc, deleteDoc, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Global variables for Firebase and application state
@@ -132,6 +155,7 @@
         let view = 'daily'; // 'daily' or 'weekly'
         let activeAlarmId = null; // ID of the medicine with an active alarm
         let isLoading = false; // Global loading state
+        let authMode = 'login'; // 'login' or 'signup'
 
         // Array of weekdays for mapping
         const daysOfWeek = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
@@ -149,8 +173,6 @@
             appId: "1:776904181981:web:f7346dd93e9c13857b7334",
             measurementId: "G-913Q465M96"
         };
-        // initialAuthToken is typically provided by the Canvas environment, but we'll always sign in anonymously
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // Utility functions for TTS
         const pcmToWav = (pcmData, sampleRate) => {
@@ -359,7 +381,14 @@
         };
 
         const renderUI = () => {
-            document.getElementById('user-id-display').textContent = userId;
+            document.getElementById('user-id-display').textContent = userId || 'Não autenticado';
+            const logoutButton = document.getElementById('logout-button');
+            if (userId) {
+                logoutButton.classList.remove('hidden');
+            } else {
+                logoutButton.classList.add('hidden');
+            }
+
             if (view === 'daily') {
                 renderDailyView();
             } else {
@@ -398,6 +427,8 @@
             // Disable/enable main action buttons
             document.getElementById('add-medicine-button').disabled = state;
             document.getElementById('save-medicine-button').disabled = state;
+            document.getElementById('auth-submit-button').disabled = state;
+
 
             // Also disable buttons within the rendered medicine cards
             document.querySelectorAll('.toggle-taken-button, .delete-medicine-button').forEach(button => {
@@ -410,6 +441,10 @@
 
         // Add medicine modal management
         const showAddModal = () => {
+            if (!userId) {
+                showToast('Por favor, faça login para adicionar remédios.', 'info');
+                return;
+            }
             const modal = document.getElementById('add-medicine-modal');
             modal.classList.remove('opacity-0', 'pointer-events-none');
             modal.querySelector('.bg-white').classList.remove('scale-95');
@@ -473,7 +508,10 @@
         // Firestore Event Handlers
         const handleAddMedicine = async (e) => {
             e.preventDefault();
-            if (!db || !userId) return;
+            if (!db || !userId) {
+                showToast('Por favor, faça login para adicionar remédios.', 'error');
+                return;
+            }
 
             setLoading(true);
 
@@ -509,7 +547,10 @@
         };
 
         const handleToggleTaken = async (medId) => {
-            if (!db || !userId) return;
+            if (!db || !userId) {
+                showToast('Por favor, faça login para registar as doses.', 'error');
+                return;
+            }
 
             setLoading(true);
 
@@ -538,8 +579,10 @@
         };
 
         const handleDeleteMedicine = async (medId) => {
-            if (!db || !userId) return;
-
+            if (!db || !userId) {
+                showToast('Por favor, faça login para excluir remédios.', 'error');
+                return;
+            }
             setLoading(true);
 
             try {
@@ -553,6 +596,92 @@
             }
         };
 
+        // Authentication Modal Functions
+        const showAuthModal = () => {
+            const modal = document.getElementById('auth-modal');
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            modal.querySelector('.bg-white').classList.remove('scale-95');
+            modal.querySelector('.bg-white').classList.add('scale-100');
+            updateAuthModalUI();
+        };
+
+        const hideAuthModal = () => {
+            const modal = document.getElementById('auth-modal');
+            modal.classList.add('opacity-0', 'pointer-events-none');
+            modal.querySelector('.bg-white').classList.add('scale-95');
+            modal.querySelector('.bg-white').classList.remove('scale-100');
+        };
+
+        const toggleAuthMode = () => {
+            authMode = authMode === 'login' ? 'signup' : 'login';
+            updateAuthModalUI();
+        };
+
+        const updateAuthModalUI = () => {
+            document.getElementById('auth-modal-title').textContent = authMode === 'login' ? 'Iniciar Sessão' : 'Criar Conta';
+            document.getElementById('auth-submit-button').textContent = authMode === 'login' ? 'Entrar' : 'Criar Conta';
+            document.getElementById('toggle-auth-mode-button').textContent = authMode === 'login' ? 'Não tem uma conta? Crie uma!' : 'Já tem uma conta? Inicie sessão!';
+            document.getElementById('auth-password').value = ''; // Clear password on mode switch
+        };
+
+        const handleAuthSubmit = async (e) => {
+            e.preventDefault();
+            setLoading(true);
+
+            const email = document.getElementById('auth-email').value.trim();
+            const password = document.getElementById('auth-password').value.trim();
+
+            if (!email || !password) {
+                showToast('Por favor, preencha o email e a palavra-passe.', 'error');
+                setLoading(false);
+                return;
+            }
+
+            try {
+                if (authMode === 'signup') {
+                    await createUserWithEmailAndPassword(auth, email, password);
+                    showToast('Conta criada com sucesso! Faça login.', 'success');
+                    authMode = 'login'; // Switch to login after signup
+                    updateAuthModalUI();
+                } else { // login
+                    await signInWithEmailAndPassword(auth, email, password);
+                    showToast('Login bem-sucedido!', 'success');
+                    hideAuthModal(); // Close modal on successful login
+                }
+            } catch (error) {
+                console.error("Erro de autenticação: ", error);
+                let errorMessage = 'Erro de autenticação. Tente novamente.';
+                if (error.code === 'auth/weak-password') {
+                    errorMessage = 'A palavra-passe deve ter pelo menos 6 caracteres.';
+                } else if (error.code === 'auth/email-already-in-use') {
+                    errorMessage = 'Este email já está em uso.';
+                } else if (error.code === 'auth/invalid-email') {
+                    errorMessage = 'O formato do email é inválido.';
+                } else if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+                    errorMessage = 'Email ou palavra-passe incorretos.';
+                }
+                showToast(errorMessage, 'error');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        const handleLogout = async () => {
+            try {
+                await signOut(auth);
+                showToast('Sessão terminada com sucesso!', 'info');
+                // Clear medicines and UI after logout
+                medicines = [];
+                userId = null;
+                renderUI();
+                showAuthModal(); // Show login/signup modal after logout
+            } catch (error) {
+                console.error("Erro ao terminar sessão:", error);
+                showToast('Erro ao terminar sessão. Tente novamente.', 'error');
+            }
+        };
+
+
         // Firebase Initialization and State Listeners
         window.onload = async () => {
             try {
@@ -563,17 +692,17 @@
 
                 onAuthStateChanged(auth, async (user) => {
                     console.log("Estado de autenticação alterado. Usuário:", user);
-                    if (!user) {
-                        console.log("Nenhum usuário autenticado, tentando login anónimo.");
-                        await signInAnonymously(auth);
-                        console.log("Login anónimo bem-sucedido.");
+                    if (user) {
+                        userId = user.uid;
+                        console.log("Usuário autenticado:", userId);
+                        hideAuthModal(); // Hide auth modal if user is logged in
                     } else {
-                        console.log("Usuário já autenticado.");
+                        userId = null; // No user logged in
+                        console.log("Nenhum usuário logado.");
+                        showAuthModal(); // Show auth modal if no user
                     }
-                    userId = auth.currentUser?.uid || `anon-${crypto.randomUUID()}`;
                     isAuthReady = true;
-                    document.getElementById('user-id-display').textContent = userId; // Update user ID immediately
-                    console.log("UserID definido:", userId);
+                    document.getElementById('user-id-display').textContent = userId || 'Não autenticado';
                     renderUI(); // Initial UI render after authentication
                     setupFirestoreListener(); // Setup Firestore listener
 
@@ -600,10 +729,16 @@
             document.getElementById('close-modal-button').addEventListener('click', hideAddModal);
             document.getElementById('add-medicine-form').addEventListener('submit', handleAddMedicine);
             document.getElementById('add-time-button').addEventListener('click', addTimeInput);
+            document.getElementById('logout-button').addEventListener('click', handleLogout); // New logout listener
+
+            // Authentication modal listeners
+            document.getElementById('close-auth-modal-button').addEventListener('click', hideAuthModal);
+            document.getElementById('toggle-auth-mode-button').addEventListener('click', toggleAuthMode);
+            document.getElementById('auth-form').addEventListener('submit', handleAuthSubmit);
 
             // Start alarm interval
             setInterval(() => {
-                if (!isAuthReady) return;
+                if (!isAuthReady || !userId) return; // Only run alarms if authenticated
 
                 const now = new Date();
                 const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -633,6 +768,7 @@
         };
 
         const setupFirestoreListener = () => {
+            // Only set up Firestore listener if a valid userId is available and auth is ready.
             if (db && isAuthReady && userId) {
                 try {
                     const medicineCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/medication_schedule`);
@@ -644,12 +780,23 @@
                         renderUI(); // Re-render UI whenever data changes
                     }, (error) => {
                         console.error("Erro ao ouvir a coleção de medicamentos:", error);
-                        showToast('Erro ao carregar seus remédios.', 'error');
+                        showToast('Erro ao carregar seus remédios. Verifique as permissões do Firebase.', 'error');
+                        // Clear medicines if permissions are an issue
+                        medicines = [];
+                        renderUI();
                     });
                 } catch (e) {
                     console.error("Erro ao configurar listener de dados:", e);
-                    showToast('Erro ao configurar a sincronização de dados.', 'error');
+                    showToast('Erro ao configurar a sincronização de dados. Verifique as permissões do Firebase.', 'error');
+                    medicines = [];
+                    renderUI();
                 }
+            } else if (isAuthReady && !userId) {
+                 console.log("Firestore listener não configurado: Nenhum utilizador logado.");
+                 medicines = []; // Clear medicines if no user is logged in
+                 renderUI();
+            } else {
+                console.log("Firestore listener não configurado: DB ou Auth não estão prontos.");
             }
         };
     </script>
